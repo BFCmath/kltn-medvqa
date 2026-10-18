@@ -38,6 +38,9 @@ stamp() { echo "[$(date +%H:%M:%S)] $*"; }
 if has prep; then
   stamp prep
   python generate_wrong_candidates.py --in_csv "$SRC/vqa_rad_closed_all.csv" --out_csv "$DATA/vqa_rad_closed_with_wrong.csv"
+  # CRAFT's later stages look images up by img_id (file name under --image_root)
+  python -c "import pandas as pd, sys; p=sys.argv[1]; d=pd.read_csv(p); d['img_id']=d.get('img_id', d['img_name']); d.to_csv(p, index=False)" \
+    "$DATA/vqa_rad_closed_with_wrong.csv"
 fi
 if has filter; then
   stamp filter

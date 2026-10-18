@@ -15,7 +15,7 @@ import json
 import shutil
 from pathlib import Path
 
-FIELDS = ["qid", "img_name", "image_organ", "question", "answer", "answer_type",
+FIELDS = ["qid", "img_id", "img_name", "image_organ", "question", "answer", "answer_type",
           "question_type", "phrase_type", "split", "category"]
 
 
@@ -41,6 +41,7 @@ def main():
         qtype = str(r.get("question_type") or "").strip()
         rows.append({
             "qid": r.get("qid"),
+            "img_id": r["image_name"],   # CRAFT resolves images by img_id
             "img_name": r["image_name"],
             "image_organ": r.get("image_organ"),
             "question": str(r["question"]).strip(),
