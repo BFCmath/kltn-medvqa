@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+kaggle.json
+/data/
+/outputs/
+kaggle/experiments/

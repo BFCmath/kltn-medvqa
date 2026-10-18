@@ -1,0 +1,6 @@
+# Kaggle images ship torch + CUDA; only add what they lack or have too old.
+transformers==4.57.1
+accelerate>=1.0
+datasets>=3.0
+qwen-vl-utils
+pandas
