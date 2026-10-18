@@ -21,7 +21,9 @@ def find_model_dir(variation: str) -> Path:
 
 def find_dataset_dir(slug: str, marker: str) -> Path:
     """Directory of a mounted dataset that contains `marker` (a file name)."""
-    hits = sorted(glob.glob(str(KAGGLE_INPUT / "**" / marker), recursive=True))
+    hits = sorted(glob.glob(str(KAGGLE_INPUT / "**" / marker), recursive=True, include_hidden=False))
+    if not hits:  # some mounts are symlinks that recursive glob may not descend into
+        hits = sorted(str(p) for p in KAGGLE_INPUT.rglob(marker))
     hits = [h for h in hits if slug in h] or hits
     if not hits:
         raise FileNotFoundError(f"no mounted dataset with {marker} under {KAGGLE_INPUT}")

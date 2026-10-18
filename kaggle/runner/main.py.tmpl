@@ -48,6 +48,7 @@ def main():
                                                capture_output=True, text=True).stdout.strip()
             code = sh("pip install -q -r requirements-kaggle.txt", log, cwd=SRC)
         if code == 0:
+            sh("find /kaggle/input -maxdepth 4 | head -40", log)
             env = dict(os.environ, OUT_DIR=str(OUT), WORK_DIR=str(WORK),
                        HF_HOME=str(WORK / "hf"), PYTHONPATH=str(SRC), **JOB_ENV)
             code = sh(f"bash jobs/{JOB}.sh", log, env=env, cwd=SRC)
