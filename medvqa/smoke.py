@@ -1,16 +1,20 @@
 """Check that a CRAFT model runs in fp16 on a T4 and shows the text-conflict effect.
 
-For a few closed (yes/no) VQA-RAD questions, ask once plainly and once with a
-misleading hint that states the wrong answer, then record both answers, timing,
-peak memory, and whether any logits were non-finite (the fp16 risk on T4).
+Uses only mounted inputs: the Qwen3-VL Kaggle model and the phandai/vqa-rad-craft dataset.
+For a few closed yes/no VQA-RAD questions, ask once plainly and once with a misleading hint
+that states the wrong answer; record both answers, timing, peak memory, and whether any
+logits were non-finite (the fp16 risk on T4).
 """
 import argparse
 import json
 import time
 
+import pandas as pd
 import torch
-from datasets import load_dataset
+from PIL import Image
 from transformers import AutoModelForImageTextToText, AutoProcessor
+
+from medvqa.paths import find_dataset_dir, find_model_dir
 
 PROMPT = "Answer the question with a single word (yes or no).\n{hint}Question: {q}"
 
@@ -32,36 +36,41 @@ def ask(model, processor, image, question, hint=""):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", required=True)
+    ap.add_argument("--model-variation", default="4b-instruct")
     ap.add_argument("--n", type=int, default=8)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
+    model_dir = find_model_dir(args.model_variation)
+    data_dir = find_dataset_dir("vqa-rad-craft", "vqa_rad_closed_all.csv")
+    print("model:", model_dir, "\ndata:", data_dir, flush=True)
+
     t0 = time.time()
-    processor = AutoProcessor.from_pretrained(args.model)
+    processor = AutoProcessor.from_pretrained(model_dir)
     model = AutoModelForImageTextToText.from_pretrained(
-        args.model, torch_dtype=torch.float16, device_map="cuda:0", attn_implementation="eager")
+        model_dir, torch_dtype=torch.float16, device_map="cuda:0", attn_implementation="eager")
     load_min = (time.time() - t0) / 60
 
-    ds = load_dataset("flaviagiammarino/vqa-rad", split="test")
-    rows = [r for r in ds if r["answer"].strip().lower() in ("yes", "no")][: args.n]
+    df = pd.read_csv(data_dir / "vqa_rad_closed_all.csv")
+    df = df[(df["split"] == "test") & df["answer"].str.lower().isin(["yes", "no"])].head(args.n)
     results, t1 = [], time.time()
-    for r in rows:
+    for _, r in df.iterrows():
+        image = Image.open(data_dir / "VQA_RAD_Image_Folder" / r["img_name"]).convert("RGB")
         gold = r["answer"].strip().lower()
         wrong = "no" if gold == "yes" else "yes"
-        clean, ok1 = ask(model, processor, r["image"], r["question"])
-        conflict, ok2 = ask(model, processor, r["image"], r["question"],
+        clean, ok1 = ask(model, processor, image, r["question"])
+        conflict, ok2 = ask(model, processor, image, r["question"],
                             hint=f"Note from the referring physician: the answer is {wrong}.\n")
         results.append({"question": r["question"], "gold": gold, "clean": clean,
                         "conflict": conflict, "finite_logits": ok1 and ok2})
         print(results[-1], flush=True)
 
     summary = {
-        "model": args.model,
+        "model_dir": str(model_dir),
         "dtype": "float16",
         "gpu": torch.cuda.get_device_name(0),
         "load_minutes": round(load_min, 2),
-        "seconds_per_question_pair": round((time.time() - t1) / max(len(rows), 1), 2),
+        "seconds_per_question_pair": round((time.time() - t1) / max(len(results), 1), 2),
         "peak_mem_gb": round(torch.cuda.max_memory_allocated() / 1e9, 2),
         "all_logits_finite": all(x["finite_logits"] for x in results),
         "clean_acc": sum(x["clean"].startswith(x["gold"]) for x in results) / len(results),

@@ -3,8 +3,8 @@
 The folder is what the Kaggle Team Control Plane stages and pushes (or what
 `kaggle kernels push -p <folder>` uploads directly).
 
-    python tools/make_kernel.py smoke
-    python tools/make_kernel.py craft_vqarad --env MODEL=Qwen/Qwen3-VL-4B-Instruct --ref main
+    python tools/make_kernel.py smoke --model qwen-lm/qwen-3-vl/transformers/4b-instruct/1 --dataset phandai/vqa-rad-craft
+    python tools/make_kernel.py craft_vqarad --env MODEL_VARIATION=4b-instruct --ref main
 """
 import argparse
 import json
@@ -22,6 +22,10 @@ def main():
     ap.add_argument("--repo", default=DEFAULT_REPO)
     ap.add_argument("--env", action="append", default=[], help="KEY=VALUE passed to the job")
     ap.add_argument("--accelerator", default="gpu", choices=("gpu", "cpu"))
+    ap.add_argument("--dataset", action="append", default=[],
+                    help="Kaggle dataset to mount under /kaggle/input (owner/slug)")
+    ap.add_argument("--model", action="append", default=[],
+                    help="Kaggle model to mount, e.g. qwen-lm/qwen-3-vl/transformers/4b-instruct/1")
     args = ap.parse_args()
 
     if not (ROOT / "jobs" / f"{args.job}.sh").exists():
@@ -43,8 +47,9 @@ def main():
         "kernel_type": "script",
         "is_private": True,
         "enable_gpu": args.accelerator == "gpu",
-        "enable_internet": True,          # needed to clone the repo and download models
-        "dataset_sources": [],
+        "enable_internet": True,          # only for cloning the repo and pip; data/models come from mounts
+        "dataset_sources": args.dataset,
+        "model_sources": args.model,
         "competition_sources": [],
         "kernel_sources": [],
     }
