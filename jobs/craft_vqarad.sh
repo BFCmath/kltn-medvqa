@@ -3,11 +3,14 @@
 #
 # Mounts: --model qwen-lm/qwen-3-vl/transformers/<variation>/1 --dataset phandai/vqa-rad-craft
 # Env:
-#   STAGES          space-separated subset of: prep filter split trace scan select ablate
+#   STAGES          space-separated subset of: prep filter split trace scan select ablate ablate_random
 #   MODEL_VARIATION Kaggle model variation (default 4b-instruct)
 #   MODEL_NAME      CRAFT model key (default qwen3vl-4b)
 #   FILTER_LIMIT / TRACE_LIMIT / SCAN_LIMIT   0 = all rows
 #   DTYPE           fp16 (T4, default) or bf16 (RTX Pro 6000 / L4)
+#   PREV_RESULTS    optional dataset slug holding an earlier run's result_<position>_vqarad/ folder
+#                   (trace + head scan), to run select/ablate without re-scanning
+#   EFF_MIN / BASE_MAX / TOPK   head selection thresholds (CRAFT defaults 0.28 / 0.35 / 50)
 #   PREV_DATA       optional dataset slug holding earlier stage CSVs (train.csv, val.csv, ...) to
 #                   continue from instead of re-running prep/filter/split
 #
@@ -32,6 +35,11 @@ if [[ -n "${PREV_DATA:-}" ]]; then
   PREV=$(python -c "from medvqa.paths import find_dataset_dir; print(find_dataset_dir('$PREV_DATA', 'train.csv'))")
   cp -n "$PREV"/*.csv "$DATA"/
   echo "continuing from $PREV: $(ls "$DATA" | tr '\n' ' ')"
+fi
+if [[ -n "${PREV_RESULTS:-}" ]]; then
+  PR=$(python -c "from medvqa.paths import find_dataset_dir; print(find_dataset_dir('$PREV_RESULTS', 'trace_conflict_scan_plan.json'))")
+  cp -rn "$PR"/. "$RES"/
+  echo "continuing from results in $PR"
 fi
 # Import transformers before CRAFT stubs out optional video libraries (see jobs/pyshim).
 export PYTHONPATH="$PWD/jobs/pyshim:${PYTHONPATH:-}"
@@ -75,4 +83,24 @@ if has scan; then
     --plan "$RES/trace_conflict_scan_plan.json" --plan_out_dir "$RES/headscan_vqarad_mm" \
     --limit "${SCAN_LIMIT:-300}"
 fi
+if has select; then
+  stamp select
+  python select_heads_merged_unique_layers.py \
+    --input_json "$RES/headscan_vqarad_mm/head_scan_merged_unique_layers.json" "${COMMON[@]}" \
+    --position "$POSITION" --source results --mode conflict_specific \
+    --eff_min "${EFF_MIN:-0.28}" --base_max "${BASE_MAX:-0.35}" --topk "${TOPK:-50}" \
+    --out_json "$RES/selected_heads.json" --out_csv "$RES/selected_heads.csv"
+fi
+mkdir -p "$RES/ablate"
+for kind in ablate ablate_random; do
+  has "$kind" || continue
+  stamp "$kind"
+  extra=(); [[ "$kind" == ablate_random ]] && extra=(--random_ablate --random_seed "${RANDOM_SEED:-0}")
+  for split in train val; do
+    python ablate_head.py --data_csv "$DATA/$split.csv" --image_root "$IMG" "${COMMON[@]}" \
+      --selected_heads "$RES/selected_heads.json" --trace_mode conflict --position "$POSITION" \
+      --metrics "$METRIC" --mask_scope all --keep_mode self --dtype "$DTYPE" --device cuda:0 \
+      --out_json "$RES/ablate/${kind}_all_${split}.json" "${extra[@]}"
+  done
+done
 stamp done
