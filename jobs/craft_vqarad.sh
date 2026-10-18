@@ -7,7 +7,8 @@
 #   MODEL_VARIATION Kaggle model variation (default 4b-instruct)
 #   MODEL_NAME      CRAFT model key (default qwen3vl-4b)
 #   FILTER_LIMIT / TRACE_LIMIT / SCAN_LIMIT   0 = all rows
-#   PREV_RESULTS    optional mounted dir with a previous run's outputs/craft (to continue stages)
+#   PREV_DATA       optional dataset slug holding earlier stage CSVs (train.csv, val.csv, ...) to
+#                   continue from instead of re-running prep/filter/split
 #
 # Every stage reads and writes under $OUT_DIR/craft, so outputs come back to the control plane.
 set -euo pipefail
@@ -25,9 +26,13 @@ RUN="$OUT_DIR/craft"
 DATA="$RUN/data"
 RES="$RUN/result_${POSITION}_vqarad"
 mkdir -p "$DATA" "$RES"
-if [[ -n "${PREV_RESULTS:-}" && -d "$PREV_RESULTS" ]]; then
-  cp -rn "$PREV_RESULTS"/. "$RUN"/
+if [[ -n "${PREV_DATA:-}" ]]; then
+  PREV=$(python -c "from medvqa.paths import find_dataset_dir; print(find_dataset_dir('$PREV_DATA', 'train.csv'))")
+  cp -n "$PREV"/*.csv "$DATA"/
+  echo "continuing from $PREV: $(ls "$DATA" | tr '\n' ' ')"
 fi
+# Import transformers before CRAFT stubs out optional video libraries (see jobs/pyshim).
+export PYTHONPATH="$PWD/jobs/pyshim:${PYTHONPATH:-}"
 echo "model=$MODEL_DIR data=$SRC stages=[$STAGES]"
 
 COMMON=(--model "$MODEL_DIR" --model_name "$MODEL_NAME")
