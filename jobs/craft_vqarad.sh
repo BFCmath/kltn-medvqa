@@ -7,6 +7,7 @@
 #   MODEL_VARIATION Kaggle model variation (default 4b-instruct)
 #   MODEL_NAME      CRAFT model key (default qwen3vl-4b)
 #   FILTER_LIMIT / TRACE_LIMIT / SCAN_LIMIT   0 = all rows
+#   DTYPE           fp16 (T4, default) or bf16 (RTX Pro 6000 / L4)
 #   PREV_DATA       optional dataset slug holding earlier stage CSVs (train.csv, val.csv, ...) to
 #                   continue from instead of re-running prep/filter/split
 #
@@ -18,6 +19,7 @@ MODEL_VARIATION="${MODEL_VARIATION:-4b-instruct}"
 MODEL_NAME="${MODEL_NAME:-qwen3vl-4b}"
 POSITION="${POSITION:-before_question}"
 METRIC="${METRIC:-follow_conflict}"
+DTYPE="${DTYPE:-fp16}"
 
 MODEL_DIR=$(python -c "from medvqa.paths import find_model_dir; print(find_model_dir('$MODEL_VARIATION'))")
 SRC=$(python -c "from medvqa.paths import find_dataset_dir; print(find_dataset_dir('vqa-rad-craft', 'vqa_rad_closed_all.csv'))")
@@ -50,7 +52,7 @@ fi
 if has filter; then
   stamp filter
   python filter_fine_grained.py --in_csv "$DATA/vqa_rad_closed_with_wrong.csv" --image_root "$IMG" "${COMMON[@]}" \
-    --out_csv "$DATA/vqa_rad_nc_cc_both_correct.csv" --dtype fp16 --device_map cuda:0 \
+    --out_csv "$DATA/vqa_rad_nc_cc_both_correct.csv" --dtype "$DTYPE" --device_map cuda:0 \
     --resize_max_side 672 --limit "${FILTER_LIMIT:-0}"
 fi
 if has split; then
@@ -61,7 +63,7 @@ fi
 if has trace; then
   stamp trace
   python layer_trace_vqarad_mm_current_fixed_fastcache.py --data_csv "$DATA/train.csv" --image_root "$IMG" \
-    "${COMMON[@]}" --device cuda:0 --dtype fp16 --trace_mode conflict --position "$POSITION" \
+    "${COMMON[@]}" --device cuda:0 --dtype "$DTYPE" --trace_mode conflict --position "$POSITION" \
     --metrics "$METRIC" --limit "${TRACE_LIMIT:-0}" --out "$RES/trace_conflict.json" \
     --plot_prefix "$RES/trace_conflict" --scan_plan_out "$RES/trace_conflict_scan_plan.json" \
     --scan_plan_metric "$METRIC"
@@ -69,7 +71,7 @@ fi
 if has scan; then
   stamp scan
   python head_scan_vqarad_mm_fastcache.py --data_csv "$DATA/train.csv" --image_root "$IMG" "${COMMON[@]}" \
-    --device cuda:0 --dtype fp16 --trace_mode conflict --position "$POSITION" --metrics "$METRIC" \
+    --device cuda:0 --dtype "$DTYPE" --trace_mode conflict --position "$POSITION" --metrics "$METRIC" \
     --plan "$RES/trace_conflict_scan_plan.json" --plan_out_dir "$RES/headscan_vqarad_mm" \
     --limit "${SCAN_LIMIT:-300}"
 fi

@@ -5,7 +5,9 @@ set -euo pipefail
 DEST="$OUT_DIR/src"
 rm -rf "$DEST"
 mkdir -p "$DEST"
-tar --exclude=.git --exclude='*.xlsx' -cf - . | tar -xf - -C "$DEST"
+tar --exclude=.git --exclude='.DS_Store' --exclude='*.xlsx' -cf - . | tar -xf - -C "$DEST"
+# CRAFT ships ~320 MB of stored result JSONs; our pipelines only need its code and small configs
+find "$DEST" -name '*.json' -size +200k -delete
 python - "$DEST" <<'EOF'
 import json, subprocess, sys, datetime
 dest = sys.argv[1]
